@@ -2,5 +2,5 @@ streamlit
 pdfplumber
 python-docx
 scikit-learn
-requests
 spacy
+nltk
