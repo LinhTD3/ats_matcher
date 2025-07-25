@@ -2,13 +2,12 @@ import streamlit as st
 import pdfplumber
 import docx
 import re
+import difflib
+import requests
 from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import difflib
-import language_tool_python
 
-# --- Streamlit config ---
 st.set_page_config(page_title="CV vs JD Matcher", layout="centered")
 st.title("📄 CV vs JD Matcher (ATS Style)")
 st.markdown("Upload your CV and Job Description to get smart, actionable feedback.")
@@ -46,13 +45,25 @@ def find_similar_keywords(jd_keywords, cv_keywords):
                 similar[jd_kw] = cv_kw
     return similar
 
-def grammar_check(text, limit=5):
-    tool = language_tool_python.LanguageTool('en-US')
-    matches = tool.check(text)
-    issues = []
-    for match in matches[:limit]:
-        issues.append(f"✏️ {match.context.strip()} → {match.message}")
-    return issues
+def grammar_check(text, max_issues=5):
+    url = f"https://services.gingersoftware.com/Ginger/correct/jsonSecured/GingerTheText"
+    params = {
+        "lang": "US",
+        "clientVersion": "2.0",
+        "apiKey": "6ae0c3a0-afdc-4532-a810-82ded0054236",
+        "text": text[:600]  # Ginger free API only supports up to 600 characters
+    }
+    try:
+        res = requests.get(url, params=params)
+        data = res.json()
+        suggestions = []
+        for i, correction in enumerate(data.get("Corrections", [])[:max_issues]):
+            original = correction["Text"]
+            suggestion = correction["Suggestions"][0]["Text"]
+            suggestions.append(f"✏️ `{original}` → `{suggestion}`")
+        return suggestions
+    except Exception as e:
+        return [f"Grammar check failed: {e}"]
 
 def calculate_match_score(cv_text, jd_text):
     vectorizer = TfidfVectorizer(stop_words='english')
@@ -78,10 +89,10 @@ def generate_summary(score, missing, similar, grammar_issues):
         summary += "**Grammar Suggestions:**\n"
         summary += "\n".join(grammar_issues[:3]) + "\n\n"
 
-    summary += "---\n### 🙋 Improve Further:\n"
-    summary += "- What impact have you had in your roles?\n"
-    summary += "- What makes you different from others in similar positions?\n"
-    summary += "- What story does your CV tell?\n"
+    summary += "---\n### 🙋 To Improve Your CV Further:\n"
+    summary += "- What unique achievements or results have you delivered?\n"
+    summary += "- How does your experience align with this job’s values?\n"
+    summary += "- Are you using powerful action verbs?\n"
     return summary
 
 # ---------- UI ----------
@@ -105,7 +116,6 @@ if st.button("🔍 Analyze Match") and cv_file and jd_file:
             grammar_issues = grammar_check(cv_text)
             score = calculate_match_score(cv_text, jd_text)
 
-            # --- Output ---
             st.success(f"✅ Match Score: {score}%")
 
             st.markdown("### 🔑 Top JD Keywords")
