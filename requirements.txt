@@ -2,4 +2,5 @@ streamlit
 pdfplumber
 python-docx
 scikit-learn
-spacy
+language-tool-python
+nltk
