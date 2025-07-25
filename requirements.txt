@@ -1,6 +1,8 @@
 streamlit
+spacy==3.7.1
 pdfplumber
 python-docx
 scikit-learn
-spacy
+numpy
+matplotlib
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz
