@@ -1,25 +1,17 @@
 import streamlit as st
 import pdfplumber
 import docx
-import io
 import re
 import nltk
-import spacy
-import subprocess
-import importlib.util
 from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# Ensure punkt is available
-nltk.download("punkt", quiet=True)
-nltk.download("averaged_perceptron_tagger", quiet=True)
-
-# Ensure spaCy model is available
-model_name = "en_core_web_sm"
-if importlib.util.find_spec(model_name) is None:
-    subprocess.run(["python", "-m", "spacy", "download", model_name])
-nlp = spacy.load(model_name)
+# Setup
+nltk.download('punkt', quiet=True)
+nltk.download('averaged_perceptron_tagger', quiet=True)
+nltk.download('wordnet', quiet=True)
+from nltk.corpus import wordnet
 
 st.set_page_config(page_title="CV vs JD Matcher", layout="centered")
 
@@ -38,10 +30,11 @@ def clean_text(text):
     return re.sub(r"[^a-zA-Z0-9\s]", "", text.lower())
 
 def extract_keywords(text, top_n=30):
-    doc = nlp(text)
+    words = nltk.word_tokenize(clean_text(text))
+    tagged = nltk.pos_tag(words)
     keywords = [
-        token.lemma_.lower() for token in doc
-        if token.pos_ in {"NOUN", "VERB", "ADJ"} and not token.is_stop and len(token.text) > 2
+        word for word, pos in tagged
+        if pos.startswith('NN') or pos.startswith('VB') or pos.startswith('JJ')
     ]
     return [word for word, _ in Counter(keywords).most_common(top_n)]
 
@@ -52,7 +45,6 @@ def calculate_match_score(cv_text, jd_text):
     return round(score * 100, 2)
 
 def find_synonyms(word):
-    from nltk.corpus import wordnet
     synonyms = set()
     for syn in wordnet.synsets(word):
         for lemma in syn.lemmas():
@@ -83,8 +75,7 @@ def analyze_keywords(cv_text, jd_text):
 
 def extract_experience_sentences(cv_text):
     lines = cv_text.split("\n")
-    experience = [line for line in lines if re.search(r"\b(led|managed|developed|designed|implemented|improved|responsible|worked|achieved)\b", line, re.IGNORECASE)]
-    return experience[:5]
+    return [line.strip() for line in lines if re.search(r"\b(led|managed|developed|designed|implemented|improved|responsible|worked|achieved)\b", line, re.IGNORECASE)][:5]
 
 def generate_improvement_summary(missing, synonyms, example_lines):
     suggestions = []
