@@ -2,10 +2,13 @@ import streamlit as st
 import pdfplumber
 import docx
 import re
-import spacy
+
 from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
+import spacy
+
 
 # Load spaCy NLP model
 nlp = spacy.load("en_core_web_sm")
