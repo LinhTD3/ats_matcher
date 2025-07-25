@@ -7,6 +7,15 @@ from nltk.tokenize import sent_tokenize, word_tokenize
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+import spacy
+
+@st.cache_resource
+def load_spacy_model():
+    return spacy.load("en_core_web_sm")
+
+nlp = load_spacy_model()
+
+
 nltk.download("punkt")
 nltk.download("stopwords")
 
