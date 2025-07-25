@@ -8,14 +8,18 @@ from sklearn.metrics.pairwise import cosine_similarity
 import difflib
 from textblob import TextBlob
 import nltk
+from nltk import data
 
-nltk.download("punkt")
-nltk.download("wordnet")
-nltk.download("omw-1.4")
+# Ensure NLTK corpus is available
+try:
+    data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
 
+# --- Streamlit config ---
 st.set_page_config(page_title="CV vs JD Matcher", layout="centered")
 st.title("📄 CV vs JD Matcher (ATS Style)")
-st.markdown("Upload your CV and Job Description to receive smart feedback and improvement suggestions.")
+st.markdown("Upload your CV and Job Description to get smart, actionable feedback.")
 
 # ---------- Helpers ----------
 
@@ -28,12 +32,10 @@ def extract_text(file):
         return "\n".join([para.text for para in doc.paragraphs])
     elif file.name.endswith(".txt"):
         return file.read().decode("utf-8")
-    else:
-        return ""
+    return ""
 
 def clean_text(text):
-    text = text.lower()
-    return re.sub(r"[^a-zA-Z0-9\s]", " ", text)
+    return re.sub(r"[^a-zA-Z0-9\s]", " ", text.lower())
 
 def extract_keywords(text, top_n=30):
     words = clean_text(text).split()
@@ -68,36 +70,36 @@ def calculate_match_score(cv_text, jd_text):
     return round(score * 100, 2)
 
 def generate_summary(score, missing, similar, grammar_issues):
-    summary = f"Your match score is **{score}%**.\n\n"
-    if score > 80:
-        summary += "🎉 Great alignment overall!\n\n"
-    elif score > 50:
-        summary += "👍 You're on the right track, but a few tweaks can help.\n\n"
+    summary = f"**Match Score:** {score}%\n\n"
+    if score >= 80:
+        summary += "✅ Strong alignment with the job description.\n\n"
+    elif score >= 50:
+        summary += "⚠️ Fair match — some adjustments recommended.\n\n"
     else:
-        summary += "⚠️ Your CV and JD need stronger alignment.\n\n"
+        summary += "🚫 Low match — your CV needs significant improvements.\n\n"
 
     if missing:
-        summary += f"🔍 Missing keywords: `{', '.join(list(missing.keys())[:5])}`\n\n"
+        summary += f"**Missing keywords:** {', '.join(list(missing.keys())[:5])}\n\n"
     if similar:
-        examples = [f"`{v}` → consider changing to `{k}`" for k, v in similar.items()]
-        summary += "🪄 Similar terms you could align:\n" + "\n".join(examples[:5]) + "\n\n"
+        summary += "**Similar terms detected (consider aligning):**\n"
+        summary += "\n".join([f"• `{v}` → `{k}`" for k, v in similar.items()][:5]) + "\n\n"
     if grammar_issues:
-        summary += "📝 Spelling/Grammar Suggestions:\n" + "\n".join(grammar_issues) + "\n\n"
+        summary += "**Grammar Suggestions:**\n"
+        summary += "\n".join(grammar_issues[:3]) + "\n\n"
+
+    summary += "---\n### 🙋 Improve Further:\n"
+    summary += "- What impact have you had in your roles?\n"
+    summary += "- What makes you different from others in similar positions?\n"
+    summary += "- What story does your CV tell?\n"
     return summary
 
-def ask_usp_questions():
-    st.markdown("### 💡 Define Your Unique Strength")
-    st.markdown("- 🧠 What result or achievement are you most proud of?")
-    st.markdown("- 🚀 What do you do better than most people in your field?")
-    st.markdown("- 🎯 What’s one reason a recruiter should remember you?")
+# ---------- UI ----------
 
-# ---------- Streamlit UI ----------
-
-cv_file = st.file_uploader("📄 Upload your CV (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
-jd_file = st.file_uploader("📝 Upload Job Description (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
+cv_file = st.file_uploader("📄 Upload your CV (PDF, DOCX, or TXT)", type=["pdf", "docx", "txt"])
+jd_file = st.file_uploader("📝 Upload the Job Description (PDF, DOCX, or TXT)", type=["pdf", "docx", "txt"])
 
 if st.button("🔍 Analyze Match") and cv_file and jd_file:
-    with st.spinner("Analyzing your documents..."):
+    with st.spinner("Extracting and analyzing..."):
         cv_text = extract_text(cv_file)
         jd_text = extract_text(jd_file)
 
@@ -107,32 +109,33 @@ if st.button("🔍 Analyze Match") and cv_file and jd_file:
             cv_keywords = extract_keywords(cv_text)
             jd_keywords = extract_keywords(jd_text)
 
-            missing_keywords = find_missing_keywords(jd_keywords, cv_keywords)
-            similar_keywords = find_similar_keywords(jd_keywords, cv_keywords)
+            missing = find_missing_keywords(jd_keywords, cv_keywords)
+            similar = find_similar_keywords(jd_keywords, cv_keywords)
             grammar_issues = grammar_check(cv_text)
-            match_score = calculate_match_score(cv_text, jd_text)
+            score = calculate_match_score(cv_text, jd_text)
 
-            # Results
-            st.success(f"✅ Match Score: {match_score}%")
+            # --- Output ---
+            st.success(f"✅ Match Score: {score}%")
 
-            st.markdown("### 📊 Top JD Keywords")
+            st.markdown("### 🔑 Top JD Keywords")
             st.json(jd_keywords)
 
-            st.markdown("### ❌ Missing in CV")
-            st.write(", ".join(missing_keywords.keys()) or "All covered — nice work!")
+            st.markdown("### ❌ Missing Keywords in CV")
+            st.write(", ".join(missing.keys()) if missing else "Great! All important keywords are present.")
 
-            st.markdown("### 🔁 Similar Words Detected")
-            for k, v in similar_keywords.items():
-                st.write(f"• Replace `{v}` → `{k}`")
+            st.markdown("### 🔁 Similar Terms (Consider Aligning)")
+            if similar:
+                for k, v in similar.items():
+                    st.write(f"`{v}` → `{k}`")
+            else:
+                st.write("None found.")
 
-            st.markdown("### 📝 Grammar & Spelling Fixes")
+            st.markdown("### 📝 Grammar & Spelling Suggestions")
             if grammar_issues:
                 for issue in grammar_issues:
                     st.write(issue)
             else:
                 st.write("Looks good!")
 
-            st.markdown("### 🧠 Summary")
-            st.markdown(generate_summary(match_score, missing_keywords, similar_keywords, grammar_issues))
-
-            ask_usp_questions()
+            st.markdown("### 📌 Summary")
+            st.markdown(generate_summary(score, missing, similar, grammar_issues))
