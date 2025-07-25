@@ -2,5 +2,5 @@ streamlit
 pdfplumber
 python-docx
 scikit-learn
-language-tool-python
 nltk
+textblob
