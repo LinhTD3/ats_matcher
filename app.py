@@ -4,13 +4,10 @@ import docx
 import io
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import spacy
-
+from collections import Counter
+import re
 
 st.set_page_config(page_title="CV vs JD Matcher", layout="centered")
-
-import spacy
-nlp = spacy.load("en_core_web_sm")
 
 def extract_text(file):
     if file.name.endswith('.pdf'):
@@ -22,23 +19,31 @@ def extract_text(file):
     else:
         return file.read().decode('utf-8')
 
+def clean_text(text):
+    text = text.lower()
+    text = re.sub(r"[^a-zA-Z0-9\s]", "", text)
+    return text
+
 def calculate_match_score(cv_text, jd_text):
     vectorizer = TfidfVectorizer(stop_words='english')
     tfidf = vectorizer.fit_transform([cv_text, jd_text])
     score = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
     return round(score * 100, 2)
 
-def extract_skills(text):
-    doc = nlp(text.lower())
-    return [token.text for token in doc if token.pos_ == "NOUN" and len(token.text) > 2]
+def get_top_keywords(text, n=20):
+    text = clean_text(text)
+    words = text.split()
+    counts = Counter(words)
+    common = counts.most_common(n)
+    return set([word for word, _ in common])
 
 def suggest_improvements(cv_text, jd_text):
-    cv_skills = set(extract_skills(cv_text))
-    jd_skills = set(extract_skills(jd_text))
-    missing = jd_skills - cv_skills
+    cv_keywords = get_top_keywords(cv_text, n=30)
+    jd_keywords = get_top_keywords(jd_text, n=30)
+    missing = jd_keywords - cv_keywords
     if not missing:
-        return "Your CV aligns well with the JD!"
-    return "You may consider including the following keywords:\n\n" + ", ".join(list(missing)[:10])
+        return "✅ Your CV aligns very well with the Job Description!"
+    return "You may consider adding the following keywords to your CV:\n\n" + ", ".join(list(missing))
 
 # UI
 st.title("📄 CV vs JD Matcher (ATS Style)")
@@ -56,15 +61,8 @@ if st.button("🔍 Analyze Match") and cv_file and jd_file:
             score = calculate_match_score(cv_text, jd_text)
             suggestions = suggest_improvements(cv_text, jd_text)
 
-        st.success(f"Match Score: {score}%")
+        st.success(f"✅ Match Score: {score}%")
         st.markdown("### ✍️ Suggestions to Improve:")
         st.write(suggestions)
     except Exception as e:
-        st.error(f"An error occurred: {e}")
-
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    spacy.cli.download("en_core_web_sm")
-    nlp = spacy.load("en_core_web_sm")
-
+        st.error(f"❌ Error: {e}")
