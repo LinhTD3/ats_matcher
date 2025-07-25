@@ -2,5 +2,4 @@ streamlit
 pdfplumber
 python-docx
 scikit-learn
-nltk
-textblob
+requests
