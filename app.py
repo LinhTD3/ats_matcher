@@ -2,116 +2,114 @@ import streamlit as st
 import pdfplumber
 import docx
 import re
+import spacy
 from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+# Load spaCy NLP model
+nlp = spacy.load("en_core_web_sm")
+
 st.set_page_config(page_title="CV vs JD Matcher", layout="centered")
 
-# --------- Utilities ---------
 def extract_text(file):
-    if file.name.endswith('.pdf'):
+    if file.name.endswith(".pdf"):
         with pdfplumber.open(file) as pdf:
             return "\n".join([page.extract_text() or "" for page in pdf.pages])
-    elif file.name.endswith('.docx'):
+    elif file.name.endswith(".docx"):
         doc = docx.Document(file)
         return "\n".join([para.text for para in doc.paragraphs])
     else:
-        return file.read().decode('utf-8')
+        return file.read().decode("utf-8")
 
-def simple_tokenize(text):
-    return re.findall(r'\b\w+\b', text.lower())
+def clean_text(text):
+    return re.sub(r"[^a-zA-Z0-9\s]", "", text.lower())
 
-def extract_keywords(text, top_n=30):
-    words = simple_tokenize(text)
-    tagged = [(word, guess_pos(word)) for word in words]
-    keywords = [word for word, pos in tagged if pos in {"NN", "VB", "JJ"}]
-    return [word for word, _ in Counter(keywords).most_common(top_n)]
-
-def guess_pos(word):
-    if word.endswith("ing") or word.endswith("ed"):
-        return "VB"
-    elif word.endswith("ion") or word.endswith("ment") or word.endswith("ity"):
-        return "NN"
-    elif word.endswith("ive") or word.endswith("ous") or word.endswith("ful"):
-        return "JJ"
-    else:
-        return "NN"
+def extract_keywords(text):
+    doc = nlp(text)
+    keywords = [token.lemma_ for token in doc if token.pos_ in ("NOUN", "VERB", "ADJ")]
+    return Counter(keywords)
 
 def calculate_match_score(cv_text, jd_text):
-    vectorizer = TfidfVectorizer(stop_words='english')
+    vectorizer = TfidfVectorizer(stop_words="english")
     tfidf = vectorizer.fit_transform([cv_text, jd_text])
     score = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
     return round(score * 100, 2)
 
-def analyze_keywords(cv_text, jd_text):
-    jd_keywords = extract_keywords(jd_text)
-    cv_keywords = extract_keywords(cv_text)
-
-    missing = [kw for kw in jd_keywords if kw not in cv_keywords]
-    matched = [kw for kw in jd_keywords if kw in cv_keywords]
-    synonyms = [(kw, cv_kw) for kw in missing for cv_kw in cv_keywords if kw in cv_kw or cv_kw in kw]
-    matched_synonyms = [s[0] for s in synonyms]
-    final_missing = [kw for kw in missing if kw not in matched_synonyms]
-
-    return matched, final_missing, synonyms, jd_keywords
-
-def extract_experience_sentences(cv_text):
-    lines = cv_text.split("\n")
-    return [line.strip() for line in lines if re.search(r"\b(led|managed|developed|designed|implemented|improved|responsible|worked|achieved)\b", line, re.IGNORECASE)][:5]
-
-def generate_improvement_summary(missing, synonyms, example_lines):
+def analyze_cv_sentences(cv_text, jd_keywords):
     suggestions = []
+    sentences = [sent.string.strip() for sent in nlp(cv_text).sents if sent.string.strip()]
+    for sent in sentences:
+        tokens = [token.lemma_ for token in nlp(sent) if token.pos_ in ("NOUN", "VERB", "ADJ")]
+        missing = [word for word in jd_keywords if word not in tokens]
+        score = len(set(tokens) & set(jd_keywords)) / (len(set(jd_keywords)) + 1e-5)
+        feedback = ""
+        if score < 0.3:
+            feedback += f"🔍 Missing key JD terms: {', '.join(missing[:5])}. "
+            feedback += f"💡 Consider rewriting: e.g., '{rewrite_sentence(sent, jd_keywords)}'"
+        suggestions.append((sent, feedback if feedback else "✅ Looks good"))
+    return suggestions
 
-    if missing:
-        suggestions.append(f"🛠 Add these missing keywords to your CV: {', '.join(missing)}")
-    
-    if synonyms:
-        for jd_kw, cv_kw in synonyms:
-            suggestions.append(f"🔁 Replace or rephrase '{cv_kw}' with '{jd_kw}' to match JD terms better.")
+def rewrite_sentence(sentence, jd_keywords):
+    # This is just a placeholder for smarter rewriting using LLM
+    tokens = [token.text for token in nlp(sentence)]
+    enriched = sentence
+    for key in jd_keywords:
+        if key not in sentence.lower():
+            enriched += f", with focus on {key}"
+            break
+    return enriched
 
-    if example_lines:
-        suggestions.append("📌 Sample experience lines to improve:")
-        for line in example_lines:
-            suggestions.append(f"→ {line}")
-        suggestions.append("Tip: Add specific outcomes, numbers, or power verbs that reflect JD needs.")
-
-    suggestions.append("\n💡 Reflect on your unique strengths:")
-    suggestions.append("- What's a moment you made a clear impact?")
-    suggestions.append("- What skills do colleagues say you're best at?")
-    suggestions.append("- If you had 1 minute to impress a hiring manager, what would you say?")
-
-    return "\n\n".join(suggestions)
-
-# --------- UI ---------
+# --- UI ---
 st.title("📄 CV vs JD Matcher (ATS Style)")
-st.write("Upload your CV and Job Description to see how well they align and what to improve.")
+st.write("Upload your CV and Job Description to analyze alignment and get improvement suggestions.")
 
 cv_file = st.file_uploader("Upload your CV (PDF or DOCX)", type=["pdf", "docx"])
 jd_file = st.file_uploader("Upload the Job Description (PDF, DOCX, or TXT)", type=["pdf", "docx", "txt"])
 
 if st.button("🔍 Analyze Match") and cv_file and jd_file:
-    with st.spinner("Analyzing your CV and JD..."):
-        cv_text = extract_text(cv_file)
-        jd_text = extract_text(jd_file)
+    with st.spinner("Analyzing..."):
+        cv_text_raw = extract_text(cv_file)
+        jd_text_raw = extract_text(jd_file)
+
+        cv_text = clean_text(cv_text_raw)
+        jd_text = clean_text(jd_text_raw)
 
         score = calculate_match_score(cv_text, jd_text)
-        matched, missing, synonyms, jd_keywords = analyze_keywords(cv_text, jd_text)
-        example_lines = extract_experience_sentences(cv_text)
-        suggestions = generate_improvement_summary(missing, synonyms, example_lines)
+
+        jd_keyword_counter = extract_keywords(jd_text)
+        jd_keywords = list(jd_keyword_counter.keys())
+        jd_keywords_set = set(jd_keywords)
+
+        sentence_feedback = analyze_cv_sentences(cv_text_raw, jd_keywords_set)
 
     st.success(f"✅ Match Score: {score}%")
-    st.markdown("### 📊 JD Keywords (Important Terms)")
-    st.write(", ".join(jd_keywords))
 
-    if missing:
-        st.markdown("### ❌ Missing Keywords")
-        st.write(", ".join(missing))
+    view_mode = st.radio("Choose CV View:", ["🔍 Enhanced Feedback View", "📄 Raw CV View"])
 
-    if synonyms:
-        st.markdown("### 🔁 Possible Improvements via Synonyms")
-        for jd_kw, cv_kw in synonyms:
-            st.write(f"- Replace **{cv_kw}** with **{jd_kw}**")
+    if view_mode == "🔍 Enhanced Feedback View":
+        st.markdown("### ✍️ CV Sentences with Feedback")
+        for sent, feedback in sentence_feedback:
+            st.markdown(f"- **{sent}**\n  - {feedback}")
+    else:
+        st.markdown("### 📄 Raw CV Content")
+        st.text(cv_text_raw)
 
-    st.markdown("### ✅ Suggestions to Improve Your CV")
-    st.write(suggestions)
+    # Summary
+    st.markdown("### 📌 Summary of Suggestions")
+    st.write("To improve your CV further, consider the following:")
+    st.markdown(f"""
+    - Use strong **action verbs** and **specific skills** found in the JD (e.g., `strategize`, `optimize`, `stakeholder`, `data-driven`).
+    - Avoid vague statements like *"worked on many things"*. Instead, quantify and link to JD needs.
+    - Customize terminology to match the JD keywords exactly (e.g., if JD says `stakeholders`, use the same instead of `clients`).
+    """)
+
+    # Open-ended questions to help define USP
+    st.markdown("### 🤔 Define Your Unique Selling Point (USP)")
+    st.write("Consider answering the following to further improve your CV:")
+    st.markdown("""
+    - What’s one achievement you’re most proud of? Can it be quantified?
+    - What technology or method do you use that makes your work more effective than others?
+    - Have you led or influenced change in a team, project, or organization?
+    - Can you tailor any accomplishment to reflect the language or needs in this JD?
+    """)
