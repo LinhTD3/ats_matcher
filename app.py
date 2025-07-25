@@ -5,8 +5,10 @@ import io
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import spacy
+import spacy.cli
 
 st.set_page_config(page_title="CV vs JD Matcher", layout="centered")
+spacy.cli.download("en_core_web_sm")
 nlp = spacy.load("en_core_web_sm")
 
 def extract_text(file):
@@ -58,3 +60,10 @@ if st.button("🔍 Analyze Match") and cv_file and jd_file:
         st.write(suggestions)
     except Exception as e:
         st.error(f"An error occurred: {e}")
+
+try:
+    nlp = spacy.load("en_core_web_sm")
+except OSError:
+    spacy.cli.download("en_core_web_sm")
+    nlp = spacy.load("en_core_web_sm")
+
